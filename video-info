@@ -1,0 +1,635 @@
+#!/usr/bin/env bash
+
+# This script is used to get the video information from a video file.
+# Besides metadata of local files, it can also get information about media on Twitch, YouTube, TikTok, and Instagram, including data about the uploader.
+
+# Version 1.3 (27.10.2022) - script structure overhauled, Linux support, dependency checks
+# Version 1.2 (27.10.2022) - local files: recogize when there are no FPS in the metadata or if the video has no audio stream, chapters are now shown in actual columns
+# Version 1.1 (21.10.2022) - local files: added creation date and comment as output, added chapters ouput, fixed fps bug
+# Version 1.0 (20.10.2022) - initial version
+
+
+### Dependencies: streamlink, yt-dlp, jq
+### macOS Homebrew packages: gdate (coreutils), column (util-linux)
+
+column_path="/opt/homebrew/opt/util-linux/bin/"
+
+check_dependencies_on_startup="true"
+
+
+function main_menu() {
+
+    # reset variables
+    reset_variables
+
+    # ask the suer for the stream URL
+    echo -e "\n\e[1mURL: \e[0m"
+    read -rep $'\e[1m> \e[0m' videourl
+
+
+    if [[ $videourl == *"twitch.tv"* ]]
+    then
+
+        twitch_info
+
+    elif [[ $videourl == *"youtube.com"* ]]
+    then
+
+        youtube_info
+
+    elif [[ $videourl == *"tiktok.com"* ]]
+    then
+
+        tiktok_info
+
+    elif [[ $videourl == *"instagram.com"* ]]
+    then
+
+        instagram_info
+
+    elif [[ $videourl == "/"* ]]
+    then
+
+        local_info
+
+    # exit commands
+    elif [[ $videourl == "" ]] || [[ $videourl == "exit" ]] || [[ $videourl == "quit" ]] || [[ $videourl == "q" ]]
+    then
+        exit 0
+    fi
+
+}
+
+function reset_variables() {
+
+    ### Variables
+
+    videourl=""
+
+    jsonoutput=""
+
+    # Twitch
+    streamername=""
+    streamtitle=""
+    duration=""
+    starttime=""
+    viewercount=""
+    resolutions=""
+
+    # YouTube
+    channel=""
+    channel_follower_count=""
+    upload_date=""
+    fulltitle=""
+    view_count=""
+    like_count=""
+    duration_string=""
+
+    # TikTok
+    uploader=""
+    creator=""
+    title=""
+    description=""
+    view_count=""
+    like_count=""
+    comment_count=""
+    repost_count=""
+    track=""
+    artist=""
+    duration=""
+    timestamp=""
+
+
+    # Instagram
+    uploader=""
+    channel=""
+    like_count=""
+    comment_count=""
+    duration=""
+    timestamp=""
+    title=""
+    description=""
+
+
+    # Local File
+    videotitle=""
+    duration=""
+    resolution=""
+    video_bitrate=""
+    fps=""
+    video_codec=""
+    audio_codec=""
+    audio_bitrate=""
+    description=""
+    comment=""
+    creation_time=""
+    chapters=""
+
+}
+
+
+function twitch_info() {
+
+
+    # if the videourl contains a "?" remove it and everything after it
+    if [[ $videourl == *"?"* ]]; then
+        videourl=$(echo $videourl | cut -d'?' -f1)
+    fi
+
+    jsonoutput="$(yt-dlp -j $videourl)"
+
+    # get the streamer name
+    streamername="$(echo "$jsonoutput" | jq -r '.uploader')"
+
+    # get the stream title
+    streamtitle="$(echo "$jsonoutput" | jq -r '.title')"
+
+    # get the duration of the stream
+    SECONDS="$(echo "$jsonoutput" | jq -r '.duration')"
+    duration="$(printf "%02d:%02d:%02d" $((SECONDS/3600)) $((SECONDS%3600/60)) $((SECONDS%60)))"
+
+    # get the start time of the stream
+    starttime="$(echo "$jsonoutput" | jq -r '.timestamp')"
+    starttime="$(date -r $starttime '+%d.%m.%Y %H:%M:%S')"
+
+    # get the viewer count
+    viewercount="$(echo "$jsonoutput" | jq -r '.view_count')"
+    viewercount="$(echo $viewercount | gsed ':a;s/\B[0-9]\{3\}\>/.&/;ta')"
+
+    # get the available resolutions
+    resolutions=$(echo "$jsonoutput" | jq -r '.formats[] |  select(.format_id != "sb0" and .format_id != "sb1") | [.format_id, (.filesize_approx/1024/1024/1024 | tostring | split(".") | "(" + .[0]  + "." + .[1][0:2] + " GB)")] | @tsv' | sed 's/Audio_Only/audio/g' | sed 's/\t/ /g' | gsed ':a;N;$!ba;s/\n/, /g')
+
+
+    # print the data
+    echo -e "\n\e[1;94mStreamer:\e[0m $streamername"
+    echo -e "\e[1;94mStream Title:\e[0m $streamtitle"
+    echo -e "\e[1;94mDuration:\e[0m $duration"
+    echo -e "\e[1;94mStart Time:\e[0m $starttime"
+    echo -e "\e[1;94mViewer Count:\e[0m $viewercount"
+    echo -e "\e[1;94mAvailable Resolutions:\e[0m $resolutions\n"
+
+    echo -e "\e[1;94mChapters:\e[0m"
+
+    # load the JSON data; for each element of "chapters", print "start_time", "end_time" and "title" in format "start_time | end_time | title" while converting "start_time" and "end_time" from seconds into hh:mm:ss using date
+    echo "$jsonoutput" | jq -r '.chapters[] | [.start_time, .end_time, .title] | @tsv' | while IFS=$'\t' read -r start_time end_time title; do
+
+        # if OS is macOS, use gdate instead of date
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            start_time="$(gdate -d@$start_time -u +%H:%M:%S)"
+            end_time="$(gdate -d@$end_time -u +%H:%M:%S)"
+        else
+            start_time="$(date -d@$start_time -u +%H:%M:%S)"
+            end_time="$(date -d@$end_time -u +%H:%M:%S)"
+        fi
+
+        echo "  $start_time | $end_time | $title"
+    done
+
+    echo ""
+
+
+    main_menu
+
+}
+
+
+function youtube_info() {
+
+    jsonoutput="$(yt-dlp -j $videourl)"
+    
+    # get the channel name
+    channel="$(echo "$jsonoutput" | jq -r '.channel')"
+
+    # get the channel follower count
+    channel_follower_count="$(echo "$jsonoutput" | jq -r '.channel_follower_count')"
+    channel_follower_count="$(echo $channel_follower_count | gsed ':a;s/\B[0-9]\{3\}\>/.&/;ta')"
+
+
+    # get the upload date
+    upload_date="$(echo "$jsonoutput" | jq -r '.upload_date')"
+
+    # if OS is macOS, use gdate instead of date
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        upload_date="$(gdate -d $upload_date '+%d.%m.%Y')"
+    else
+        upload_date="$(date -d $upload_date '+%d.%m.%Y')"
+    fi
+
+    # get the video title
+    fulltitle="$(echo "$jsonoutput" | jq -r '.fulltitle')"
+
+    # get the view count
+    view_count="$(echo "$jsonoutput" | jq -r '.view_count')"
+    view_count="$(echo $view_count | gsed ':a;s/\B[0-9]\{3\}\>/.&/;ta')"
+
+    # get the viewer count
+    like_count="$(echo "$jsonoutput" | jq -r '.like_count')"
+    like_count="$(echo $like_count | gsed ':a;s/\B[0-9]\{3\}\>/.&/;ta')"
+
+    # get the duration
+    duration_string="$(echo "$jsonoutput" | jq -r '.duration_string')"
+
+
+    # print the data
+    echo -e "\n\e[1;91mChannel:\e[0m $channel"
+    echo -e "\e[1;91mChannel Follower Count:\e[0m $channel_follower_count"
+    echo -e "\e[1;91mUpload Date:\e[0m $upload_date"
+    echo -e "\e[1;91mVideo Title:\e[0m $fulltitle"
+    echo -e "\e[1;91mView Count:\e[0m $view_count"
+    echo -e "\e[1;91mLike Count:\e[0m $like_count"
+    echo -e "\e[1;91mDuration:\e[0m $duration_string"
+    echo -e "\e[1;91mCategory:\e[0m $(echo "$jsonoutput" | jq -r '.categories[]' | gsed ':a;N;$!ba;s/\n/, /g')\n"
+
+    # if the JSON data contains "chapters", print the chapters
+    if echo "$jsonoutput" | jq -r '.chapters' | grep -q "start_time"
+    then
+        echo -e "\e[1;91mChapters:\e[0m"
+        echo "$jsonoutput" | jq -r '.chapters[] | [.start_time, .end_time, .title] | @tsv' | while IFS=$'\t' read -r start_time end_time title; do
+
+        # if OS is macOS, use gdate instead of date
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            start_time="$(gdate -d@$start_time -u +%H:%M:%S)"
+            end_time="$(gdate -d@$end_time -u +%H:%M:%S)"
+        else
+            start_time="$(date -d@$start_time -u +%H:%M:%S)"
+            end_time="$(date -d@$end_time -u +%H:%M:%S)"
+        fi
+
+        echo "  $start_time | $end_time | $title"
+        done
+    fi
+
+
+   # print the array "tags", each element on a new line
+    echo -e "\n\e[1;91mTags:\e[0m"
+    echo "$jsonoutput" | jq -r '.tags[]' | while read -r tag; do
+        echo "  $tag"
+    done
+
+
+    echo ""
+
+
+    main_menu
+
+}
+
+function tiktok_info() {
+
+    jsonoutput="$(yt-dlp -j $videourl)"
+    
+    # get the channel name
+    uploader="$(echo "$jsonoutput" | jq -r '.uploader')"
+
+    # get the creator
+    creator="$(echo "$jsonoutput" | jq -r '.creator')"
+
+    # get the video title
+    title="$(echo "$jsonoutput" | jq -r '.title')"
+
+    # get the description
+    description="$(echo "$jsonoutput" | jq -r '.description')"
+
+     # get the upload date
+    timestamp="$(echo "$jsonoutput" | jq -r '.timestamp')"
+    timestamp="$(date -r $timestamp '+%d.%m.%Y %H:%M:%S')"
+
+    # get the view count
+    view_count="$(echo "$jsonoutput" | jq -r '.view_count')"
+    view_count="$(echo $view_count | gsed ':a;s/\B[0-9]\{3\}\>/.&/;ta')"
+
+    # get the like count
+    like_count="$(echo "$jsonoutput" | jq -r '.like_count')"
+    like_count="$(echo $like_count | gsed ':a;s/\B[0-9]\{3\}\>/.&/;ta')"
+
+    # get the comment count
+    comment_count="$(echo "$jsonoutput" | jq -r '.comment_count')"
+    comment_count="$(echo $comment_count | gsed ':a;s/\B[0-9]\{3\}\>/.&/;ta')"
+
+    # get the repost count
+    repost_count="$(echo "$jsonoutput" | jq -r '.repost_count')"
+    repost_count="$(echo $repost_count | gsed ':a;s/\B[0-9]\{3\}\>/.&/;ta')"
+
+    # get the duration
+    duration="$(echo "$jsonoutput" | jq -r '.duration')"
+
+    # if OS is macOS, use gdate instead of date
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        duration="$(gdate -d@$duration -u +%M:%S)"
+    else
+        duration="$(date -d@$duration -u +%M:%S)"
+    fi
+
+    # get the track
+    track="$(echo "$jsonoutput" | jq -r '.track')"
+    if [[ $track == "null" ]]
+    then
+        track="(not found)"
+    fi
+
+    # get the artist
+    artist="$(echo "$jsonoutput" | jq -r '.artist')"
+    if [[ $artist == "null" ]]
+    then
+        artist="(not found)"
+    fi
+
+    # print the data
+    echo -e "\n\033[1;38;5;205mUploader:\e[0m $uploader"
+    echo -e "\033[1;38;5;205mCreator:\e[0m $creator"
+    echo -e "\033[1;38;5;205mTitle:\e[0m $title"
+    echo -e "\033[1;38;5;205mDescription:\e[0m $description"
+    echo -e "\033[1;38;5;205mUpload Date & Time:\e[0m $timestamp"
+    echo -e "\033[1;38;5;205mView Count:\e[0m $view_count"
+    echo -e "\033[1;38;5;205mLike Count:\e[0m $like_count"
+    echo -e "\033[1;38;5;205mComment Count:\e[0m $comment_count"
+    echo -e "\033[1;38;5;205mRepost Count:\e[0m $repost_count"
+    echo -e "\033[1;38;5;205mDuration:\e[0m $duration"
+    echo -e "\033[1;38;5;205mTrack:\e[0m $track"
+    echo -e "\033[1;38;5;205mArtist:\e[0m $artist\n"
+
+    echo ""
+
+    main_menu
+
+}
+
+
+function instagram_info() {
+
+    jsonoutput="$(yt-dlp -j $videourl 2>&1)"
+
+    # get the uploader
+    uploader="$(yt-dlp -j $videourl | jq -r '.uploader')"
+
+    # get the channel
+    channel="$(yt-dlp -j $videourl | jq -r '.channel')"
+
+    # get the like count
+    like_count="$(yt-dlp -j $videourl | jq -r '.like_count')"
+    like_count="$(echo $like_count | gsed ':a;s/\B[0-9]\{3\}\>/.&/;ta')"
+
+    # get the comment count
+    comment_count="$(yt-dlp -j $videourl | jq -r '.comment_count')"
+    comment_count="$(echo $comment_count | gsed ':a;s/\B[0-9]\{3\}\>/.&/;ta')"
+
+    # get the duration
+    duration="$(yt-dlp -j $videourl | jq -r '.duration_string')"
+
+    # if OS is macOS, use gdate instead of date
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        duration="$(gdate -d@$duration -u +%M:%S)"
+    else
+        duration="$(date -d@$duration -u +%M:%S)"
+    fi
+
+    # get the upload date
+    timestamp="$(yt-dlp -j $videourl | jq -r '.timestamp')"
+    timestamp="$(date -r $timestamp '+%d.%m.%Y %H:%M:%S')"
+
+    # get the video title
+    title="$(yt-dlp -j $videourl | jq -r '.title')"
+
+    # get the description
+    description="$(yt-dlp -j $videourl | jq -r '.description')"
+
+    # print the data
+    echo -e "\n\033[1;38;5;198mUploader:\e[0m $uploader"
+    echo -e "\033[1;38;5;198mChannel:\e[0m $channel"
+    echo -e "\033[1;38;5;198mLike Count:\e[0m $like_count"
+    echo -e "\033[1;38;5;198mComment Count:\e[0m $comment_count"
+    echo -e "\033[1;38;5;198mDuration:\e[0m $duration"
+    echo -e "\033[1;38;5;198mUpload Date & Time:\e[0m $timestamp"
+    echo -e "\033[1;38;5;198mTitle:\e[0m $title"
+    echo -e "\033[1;38;5;198mDescription:\e[0m $description\n"
+
+    echo ""
+
+    main_menu
+
+}
+
+
+function local_info() {
+
+
+    # in videourl remove all occurences of "\"
+    videourl="$(echo $videourl | gsed 's/\\//g')"
+
+    # get the video title
+    videotitle=$(ffprobe -v quiet -show_entries format_tags=title -of default=noprint_wrappers=1:nokey=1 "$videourl")
+
+    # get the creation_time
+    creation_time=$(ffprobe -v quiet -show_entries format_tags=creation_time -of default=noprint_wrappers=1:nokey=1 "$videourl")
+    # if creation_time is not empty
+    if [[ $creation_time != "" ]]
+    then
+        # convert the creation_time to a readable format  
+        # if OS is macOS, use gdate instead of date
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            creation_time="$(gdate -d $creation_time '+%d.%m.%Y %H:%M:%S')"
+        else
+            creation_time="$(date -d $creation_time '+%d.%m.%Y %H:%M:%S')"
+        fi
+
+    fi
+
+    # get the duration
+    duration=$(ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$videourl")
+
+    # if OS is macOS, use gdate instead of date
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        duration="$(gdate -d@$duration -u +%H:%M:%S)"
+    else
+        duration="$(date -d@$duration -u +%H:%M:%S)"
+    fi
+
+    # get the resolution
+    resolution=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$videourl")
+
+    # get the video bitrate
+    video_bitrate=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=bit_rate -of csv=s=x:p=0 "$videourl")
+    video_bitrate=$(echo $video_bitrate | awk '{print $1/1000}')
+    video_bitrate=$(printf "%.0f" $video_bitrate)
+    #video_bitrate=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=bit_rate -of csv=s=x:p=0 "$videourl")
+
+    # get the fps
+    fps=$(ffprobe -i "$videourl" 2>&1 | sed -n "s/.*, \(.*\) fp.*/\1/p")
+
+    # get the video codec
+    video_codec=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=codec_name -of csv=s=x:p=0 "$videourl")
+
+    # get the audio codec
+    audio_codec=$(ffprobe -v quiet -select_streams a:0 -show_entries stream=codec_name -of csv=s=x:p=0 "$videourl")
+
+    # get the audio bitrate
+    audio_bitrate=$(ffprobe -v quiet -select_streams a:0 -show_entries stream=bit_rate -of csv=s=x:p=0 "$videourl")
+    audio_bitrate=$(echo $audio_bitrate | awk '{print $1/1000}')
+    audio_bitrate=$(printf "%.0f" $audio_bitrate)
+
+    # get the description
+    jsonoutput=$(ffprobe -v quiet -i "$videourl" -print_format json -show_format)
+    
+    description=$(ffprobe -v quiet -show_entries format_tags=description -of default=noprint_wrappers=1:nokey=1 "$videourl")
+
+    # get the comment
+    comment=$(ffprobe -v quiet -show_entries format_tags=comment -of default=noprint_wrappers=1:nokey=1 "$videourl")
+
+    # get the chapters via JSON output
+    chapters=$(ffprobe -v quiet -i "$videourl" -print_format json -show_chapters)
+    # number of chapters
+    chapters_count=$(echo "$chapters" | jq '.chapters | length')
+
+
+    # print the data
+
+    echo ""
+
+     # if the video does have a title, print it
+    if [[ $videotitle != "" ]]
+    then
+        echo -e "\e[1;94mVideo Title:\e[0m $videotitle"
+    fi
+
+    echo -e "\e[1;94mDuration:\e[0m $duration"
+    echo -e "\e[1;94mResolution:\e[0m $resolution"
+    # if fps is not empty
+    if [[ $fps != "" ]]
+    then
+        echo -e "\e[1;94mFPS:\e[0m $fps"
+    else
+        echo -e "\e[1;94mFPS:\e[0m -/-"
+    fi
+    echo -e "\e[1;94mVideo Codec:\e[0m $video_codec"
+    echo -e "\e[1;94mVideo Bitrate:\e[0m $video_bitrate kbps"
+
+    # if the audio codec is not empty
+    if [[ $audio_codec != "" ]]
+    then
+            echo -e "\e[1;94mAudio Codec:\e[0m $audio_codec"
+            echo -e "\e[1;94mAudio Bitrate:\e[0m $audio_bitrate kbps"
+    else
+        echo -e "\e[1;94mAudio Codec:\e[0m Video has no audio"
+    fi
+
+    # if creation_time is not empty, print it
+    if [[ $creation_time != "" ]]
+    then
+        echo -e "\e[1;94mCreation Date:\e[0m $creation_time"
+    fi
+
+
+    # echo -e "\e[1;94mAudio Channels:\e[0m $audio_channels\n"
+
+    # if the video does have a description, print it
+    if [[ $description != "" ]]
+    then
+        echo -e "\n\e[1;94mDescription:\e[0m\n$description"
+    fi
+
+    # if the video does have a description, print it
+    if [[ $comment != "" ]]
+    then
+        echo -e "\n\e[1;94mComment:\e[0m $comment"
+    fi
+
+    # if $chapters_count != 0 print the chapters into a temporary csv file in the following format: title,start_time,end_time; format the start_time and end_time to a readable format
+    if [[ $chapters_count != 0 ]]
+    then
+        echo -e "\n\e[1;94mChapters:\e[0m"
+        #echo -e "\e[94mTitle | Start Time | End Time\e[0m"
+        for (( i=0; i<$chapters_count; i++ ))
+        do
+            chapter_title=$(echo "$chapters" | jq -r ".chapters[$i].tags.title")
+            chapter_start_time=$(echo "$chapters" | jq -r ".chapters[$i].start_time")
+            chapter_end_time=$(echo "$chapters" | jq -r ".chapters[$i].end_time")
+
+            # if OS is macOS, use gdate instead of date
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                chapter_start_time=$(gdate -d@$chapter_start_time -u +%H:%M:%S)
+                chapter_end_time=$(gdate -d@$chapter_end_time -u +%H:%M:%S)
+            else
+                chapter_start_time=$(date -d@$chapter_start_time -u +%H:%M:%S)
+                chapter_end_time=$(date -d@$chapter_end_time -u +%H:%M:%S)
+            fi
+
+            echo -e "$chapter_title,$chapter_start_time,$chapter_end_time" >> "/tmp/chapters.csv"
+        done
+
+
+        # if OS is macOS, use gdate instead of date
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            ${column_path}/column -s "," -t --table-columns "Title","Start Time","End Time" "/tmp/chapters.csv"
+        else
+            column -s "," -t --table-columns "Title","Start Time","End Time" "/tmp/chapters.csv"
+        fi
+    
+
+        rm "/tmp/chapters.csv"
+
+    fi
+
+    echo ""
+
+    main_menu
+
+}
+
+function check_dependencies() {
+
+
+    # check if streamlink is installed
+    if ! command -v streamlink &> /dev/null
+    then
+        echo "streamlink could not be found"
+        exit
+    fi
+
+    # check if ffprobe is installed
+    if ! command -v ffprobe &> /dev/null
+    then
+        echo -e "\e[1;91mError: ffprobe is not installed. Please install it.\e[0m"
+        exit
+    fi
+
+    # check if jq is installed
+    if ! command -v jq &> /dev/null
+    then
+        echo -e "\e[1;91mError: jq is not installed. Please install it.\e[0m"
+        exit
+    fi
+
+    # check if column is installed
+    if ! command -v column &> /dev/null
+    then
+        echo -e "\e[1;91mError: column is not installed. Please install it.\e[0m"
+        exit
+    fi
+
+    # check if gdate is installed
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        if ! command -v gdate &> /dev/null
+        then
+            echo -e "\e[1;91mError: gdate is not installed. Please install it.\e[0m"
+            exit
+        fi
+    fi
+
+}
+
+
+### Main ###
+
+
+# if check_dependencies_on_startup is set to true, check dependencies
+if [[ $check_dependencies_on_startup == true ]]
+then
+    check_dependencies
+fi
+
+
+main_menu
+
+
+exit 0
+
