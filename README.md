@@ -2,12 +2,13 @@
 
 ## Description
 
-This script is used to get the video information from a video file.
+This Bash script is used to get the video information from a video file.
 Besides metadata of local files, it can also get information about media on Twitch, YouTube, TikTok, and Instagram, including data about the uploader.
+
 
 ## Features
 
-Get the following information about videos:
+Get the following information about videos from the following sources:
 
 **Twitch VODs**
 ````
