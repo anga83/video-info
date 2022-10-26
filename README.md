@@ -84,6 +84,7 @@ Chapters (in a table with: Start Time | End Time | Chapter Title) (if available)
 The following dependencies are required to use parsers:
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) (all platforms)
 - [Streamlink](https://streamlink.github.io/) (Twitch)
+- [ffprobe](https://ffmpeg.org/download.html) (local files)
 - [jq](https://stedolan.github.io/jq/) (all platforms & local files)
 
 macOS users also need to install the following via [Homebrew](https://brew.sh/):
