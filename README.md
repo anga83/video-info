@@ -95,7 +95,7 @@ The path to `column` has to be manually entered into the `column_path` variable.
 
 Windows users need to use Cygwin or WSL to run Bash scripts. Most Linux distributions and macOS[^1] should already have Bash installed.
 
-Simply download [tiktok-downloader.sh](https://raw.githubusercontent.com/anga83/tiktok-downloader/main/tiktok-downloader.sh) from the files above and save it in a convenient place. Like all Bash scripts, the file has to be marked as executable. To do this, open a terminal window and paste `chmod +x /path/to/video-info`. Once that is done, you can double-click it to run.
+Simply download [video-info](https://github.com/anga83/video-info/blob/main/video-info) from the files above and save it in a convenient place. Like all Bash scripts, the file has to be marked as executable. To do this, open a terminal window and paste `chmod +x /path/to/video-info`. Once that is done, you can double-click it to run.
 
 If you don't already have it installed you also need to install [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 Ubuntu users should note that Ubuntu 22.04 LTS has an old version of yt-dlp in its package repositories, which may cause the fetching metdata to fail. Check the link above to update to the latest version.
